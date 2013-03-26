@@ -1,0 +1,8 @@
+Todo:
+ox Choose image1 and 2, file chooser
+ox Save As...
+ox Black & White, Negative, Sepia
+ox Flip H and V
+o  Pan/zoom
+ox Rotate L, R
+
