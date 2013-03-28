@@ -15,6 +15,8 @@ import java.awt.image.ColorModel;
 import java.awt.image.WritableRaster;
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicLong;
@@ -50,14 +52,26 @@ public class Main extends JFrame {
 
     public BufferedImage mergeImages(int windowWidth, int windowHeight) throws IOException {
         long start = System.currentTimeMillis();
-        int imageWidth = baseImage.getWidth();
-        int imageHeight = baseImage.getHeight();
+
+        BufferedImage image = baseImage;
+        BufferedImage image2 = layerImage;
+
+        final int imageWidth;
+        final int imageHeight;
+
+        imageWidth = image.getWidth();
+        imageHeight = image.getHeight();
 
         // Get the smallest ratio
         int width, height;
         if (windowWidth == 0 && windowHeight == 0) {
             width = imageWidth;
             height = imageHeight;
+//            // Images should start off matching sizes, even if we are not
+//            // changing the size
+//            if (image2.getWidth() != width || image2.getHeight() != height) {
+//                image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
+//            }
         } else if ((double) windowWidth / imageWidth < (double) windowHeight / imageHeight) {
             width = windowWidth;
             height = (int) ((double) imageHeight / imageWidth * width);
@@ -66,43 +80,42 @@ public class Main extends JFrame {
             width = (int) ((double) imageWidth / imageHeight * height);
         }
 
-        BufferedImage image = baseImage;
-        BufferedImage image2 = layerImage;
-
-        for (int pass = 0; pass < 2; pass++) {
-            // Resize first
-            if (windowWidth != 0) {
-                image = resizeImage(image, width, height, BufferedImage.TYPE_INT_RGB);
-                image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
-            }
-            if ( pass == 1 ) {
-                break; // Only do rotation once
-            }
-            // Rotations early, as change shape of image1
-            image = rotateImage(rotateCombo1.getSelectedItem(), image);
-            image2 = rotateImage(rotateCombo2.getSelectedItem(), image2);
-            if ( image.getWidth() != image2.getWidth() || image.getHeight() != image2.getHeight()) {
-                // Resize again?  FIXME: Or just crop?
-            } else {
-                break;
-            }
+        // Resize first so everything happens a lot quicker and takes less memory
+        if (windowWidth != 0) {
+            image = resizeImage(image, width, height, BufferedImage.TYPE_INT_RGB);
+            image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
         }
 
+        //--- Image modifications...
         
-        BufferedImage ans = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
-        System.out.println("Size is " + image.getWidth() + ", " + image.getHeight());
-        int brightness1Value = brightness1.getValue();
-        int brightness2Value = brightness2.getValue();
-        boolean darknessWinsV = darknessWins.isSelected();
-
-        // B&W etc styles
-        image = styleImage(style1, image);
-        image2 = styleImage(style2, image2);
+        // Rotations early, as change shape of image1
+        image = rotateImage(rotateCombo1.getSelectedItem(), image);
+        width = image.getWidth();
+        height = image.getHeight();
+        image2 = rotateImage(rotateCombo2.getSelectedItem(), image2);
+        if (width != image2.getWidth() || height != image2.getHeight()) {
+            // Resize again?
+            System.out.println("Extra resize to "+width+","+height);
+            image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
+        }
 
         // Flips
         image = flipImage(flipCombo1.getSelectedItem(), image);
         image2 = flipImage(flipCombo2.getSelectedItem(), image2);
 
+        //--- End modifications
+        
+        // B&W etc styles
+        image = styleImage(style1, image);
+        image2 = styleImage(style2, image2);
+
+        System.out.println("Size is " + image.getWidth() + ", " + image.getHeight() + " and " + image2.getWidth() + ", " + image2.getHeight());     
+
+        // Merge
+        final BufferedImage ans = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+        final int brightness1Value = brightness1.getValue();
+        final int brightness2Value = brightness2.getValue();
+        final boolean darknessWinsV = darknessWins.isSelected();
         int p, q;
         int r, g, b;
         int origR, origG, origB;
@@ -170,90 +183,30 @@ public class Main extends JFrame {
         return ans;
     }
 
+    static private Map<String, Integer> rotateNameToCount = new HashMap<String, Integer>();
+    static {
+        rotateNameToCount.put("No-rotate", 0);
+        rotateNameToCount.put("Right", 1);
+        rotateNameToCount.put("Full", 2);
+        rotateNameToCount.put("Left", 3);
+    }
     private BufferedImage rotateImage(Object selectedItem, BufferedImage image) {
-        if ( "Left".equals(selectedItem) ) {
-            return rotate(image, 90);
-        }
-        if ( "Right".equals(selectedItem) ) {
-            return rotate(image, -90);
-        }
-        if ( "Full".equals(selectedItem) ) {
-            return rotate(image, 180);
+        for (int count = 0; count < rotateNameToCount.get(selectedItem); count++) {
+            image = rotateCw(image); // , -90);
         }
         return image;
     }
-    
-    public BufferedImage rotate(BufferedImage image, int thetaInDegrees)
-    {
-      /*
-       * Affline transform only works with perfect squares. The following
-       *   code is used to take any rectangle image and rotate it correctly.
-       *   To do this it chooses a center point that is half the greater
-       *   length and tricks the library to think the image is a perfect
-       *   square, then it does the rotation and tells the library where
-       *   to find the correct top left point. The special cases in each
-       *   orientation happen when the extra image that doesn't exist is
-       *   either on the left or on top of the image being rotated. In
-       *   both cases the point is adjusted by the difference in the
-       *   longer side and the shorter side to get the point at the
-       *   correct top left corner of the image. NOTE: the x and y
-       *   axes also rotate with the image so where width > height
-       *   the adjustments always happen on the y axis and where
-       *   the height > width the adjustments happen on the x axis.
-       *  
-       */
-      AffineTransform xform = new AffineTransform();
-     
-      if (image.getWidth() > image.getHeight())
-      {
-        xform.setToTranslation(0.5 * image.getWidth(), 0.5 * image.getWidth());
-        xform.rotate(Math.toRadians(thetaInDegrees));
-     
-        int diff = image.getWidth() - image.getHeight();
-     
-        switch (thetaInDegrees)
-        {
-        case 90:
-          xform.translate(-0.5 * image.getWidth(), -0.5 * image.getWidth() + diff);
-          break;
-        case 180:
-          xform.translate(-0.5 * image.getWidth(), -0.5 * image.getWidth() + diff);
-          break;
-        default:
-          xform.translate(-0.5 * image.getWidth(), -0.5 * image.getWidth());
-          break;
-        }
-      }
-      else if (image.getHeight() > image.getWidth())
-      {
-        xform.setToTranslation(0.5 * image.getHeight(), 0.5 * image.getHeight());
-        xform.rotate(Math.toRadians(thetaInDegrees));
-     
-        int diff = image.getHeight() - image.getWidth();
-     
-        switch (thetaInDegrees)
-        {
-        case 180:
-          xform.translate(-0.5 * image.getHeight() + diff, -0.5 * image.getHeight());
-          break;
-        case 270:
-          xform.translate(-0.5 * image.getHeight() + diff, -0.5 * image.getHeight());
-          break;
-        default:
-          xform.translate(-0.5 * image.getHeight(), -0.5 * image.getHeight());
-          break;
-        }
-      }
-      else
-      {
-        xform.setToTranslation(0.5 * image.getWidth(), 0.5 * image.getHeight());
-        xform.rotate(Math.toRadians(thetaInDegrees));
-        xform.translate(-0.5 * image.getHeight(), -0.5 * image.getWidth());
-      }
-     
-      AffineTransformOp op = new AffineTransformOp(xform, AffineTransformOp.TYPE_BILINEAR);
-     
-      return op.filter(image, null);
+
+    public static BufferedImage rotateCw(BufferedImage img) {
+        int width = img.getWidth();
+        int height = img.getHeight();
+        BufferedImage newImage = new BufferedImage(height, width, img.getType());
+
+        for (int i = 0; i < width; i++)
+            for (int j = 0; j < height; j++)
+                newImage.setRGB(height - 1 - j, i, img.getRGB(i, j));
+
+        return newImage;
     }
 
     private BufferedImage flipImage(Object selectedItem, BufferedImage image) {
@@ -548,15 +501,15 @@ public class Main extends JFrame {
         flipCombo2.setSelectedIndex(0);
         flipCombo2.addActionListener(alRedo);
 
-        String [] rotateChoice = new String[] { "No-rotate", "Left", "Right", "Full" };
+        String[] rotateChoice = new String[] { "No-rotate", "Left", "Right", "Full" };
         rotateCombo1 = new JComboBox(rotateChoice);
         rotateCombo1.setSelectedIndex(0);
         rotateCombo1.addActionListener(alRedo);
-        
+
         rotateCombo2 = new JComboBox(rotateChoice);
         rotateCombo2.setSelectedIndex(0);
         rotateCombo2.addActionListener(alRedo);
-        
+
         darknessWins = new JCheckBox("Darkness", false);
         darknessWins.addChangeListener(onChangeRedo);
 
