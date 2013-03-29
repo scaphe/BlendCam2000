@@ -31,13 +31,16 @@ import javax.imageio.*;
 public class ImagePanel extends JPanel {
     
     private Image image;
-    private int imageWidth = 0;
-    private int imageHeight = 0;
+    public int imageDrawnWidth = 0;
+    public int imageDrawnHeight = 0;
+    private int imageActualWidth = 0;
+    private int imageActualHeight = 0;
     //private long paintCount = 0;
     
     //constructor
     public ImagePanel() {
         super();
+        setSize(300, 200);
     }
     
     public void loadImage(String file) throws IOException {
@@ -48,8 +51,9 @@ public class ImagePanel extends JPanel {
         image = read;
         //might be a situation where image isn't fully loaded, and
         //  should check for that before setting...
-        imageWidth = image.getWidth(this);
-        imageHeight = image.getHeight(this);
+        imageActualWidth = image.getWidth(this);
+        imageActualHeight = image.getHeight(this);
+        calcDrawSize();
         repaint();
     }
     
@@ -60,21 +64,27 @@ public class ImagePanel extends JPanel {
             //System.out.println("ImagePanel paintComponent " + ++paintCount);
  //           g.drawImage(scaledImage, 0, 0, this);
             // Lock aspect ratio of image
-            int windowWidth = getWidth();
-            int windowHeight = getHeight();
-            System.out.println("drawing size of "+imageWidth+", "+imageHeight);
+            calcDrawSize();
             
-            // Get the smallest ratio
-            final int w, h;
-            if ( (double)windowWidth/imageWidth < (double)windowHeight/imageHeight ) {
-                w = windowWidth;
-                h = (int)((double)imageHeight / imageWidth * w);
-            } else {
-                h = windowHeight;
-                w = (int)((double)imageWidth / imageHeight * h);
-            }
-            
-            g.drawImage(image, 0, 0, w, h, this);
+            g.drawImage(image, 0, 0, imageDrawnWidth, imageDrawnHeight, this);
         }
+    }
+
+    private void calcDrawSize() {
+        int windowWidth = getWidth();
+        int windowHeight = getHeight();
+        System.out.println("drawing size of "+imageActualWidth+", "+imageActualHeight);
+        
+        // Get the smallest ratio
+        final int w, h;
+        if ( (double)windowWidth/imageActualWidth < (double)windowHeight/imageActualHeight ) {
+            w = windowWidth;
+            h = (int)((double)imageActualHeight / imageActualWidth * w);
+        } else {
+            h = windowHeight;
+            w = (int)((double)imageActualWidth / imageActualHeight * h);
+        }
+        imageDrawnWidth = w;
+        imageDrawnHeight = h;
     }
 }

@@ -2,6 +2,11 @@ package com.p944.blend;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.color.ColorSpace;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
@@ -15,186 +20,308 @@ import java.awt.image.ColorModel;
 import java.awt.image.WritableRaster;
 import java.io.File;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.imageio.ImageIO;
 import javax.swing.BoxLayout;
+import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
-import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButton;
 import javax.swing.JSlider;
+import javax.swing.JTextField;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
 
+import com.p944.blend.Main.ResizeMod;
+
 public class Main extends JFrame {
 
-    public static String version = "0.1";
+    public static abstract class Modification {
+        public final int imageIndex;
+
+        public Modification(int imageIndex) {
+            this.imageIndex = imageIndex;
+        }
+
+        public abstract BufferedImage modify(BufferedImage image);
+
+        public String getName() {
+            return this.getClass().getSimpleName();
+        }
+    }
+
+    public static class ResizeMod extends Modification {
+        public final double zoom;
+        public final double offsetXPc;
+        public final double offsetYPc;
+
+        public ResizeMod(int imageIndex,
+                         double zoom,
+                         double offsetXPc,
+                         double offsetYPc) {
+            super(imageIndex);
+            this.zoom = zoom;
+            this.offsetXPc = offsetXPc;
+            this.offsetYPc = offsetYPc;
+        }
+
+        public BufferedImage modify(BufferedImage image) {
+            // Zoom and shift by % of width and height
+            int w = image.getWidth();
+            int h = image.getHeight();
+            int x = (int) (offsetXPc * w);
+            int y = (int) (offsetYPc * h);
+            BufferedImage resized1 = new BufferedImage(w, h, image.getType());
+            Graphics2D g = resized1.createGraphics();
+            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            g.drawImage(image, 0, 0, (int) (w * zoom), (int) (h * zoom), x, y, x+w, y+h, null);
+            g.dispose();
+            return resized1;
+        }
+    }
+
+    public static class RotateLeft extends Modification {
+        public RotateLeft(int i) {
+            super(i);
+        }
+
+        public BufferedImage modify(BufferedImage image) {
+            image = rotateCw(image); // , -90);
+            image = rotateCw(image); // , -90);
+            image = rotateCw(image); // , -90);
+            return image;
+        }
+    }
+
+    public static class RotateRight extends Modification {
+        public RotateRight(int i) {
+            super(i);
+        }
+
+        public BufferedImage modify(BufferedImage image) {
+            return rotateCw(image); // , -90);
+        }
+    }
+
+    public static class FlipHoriz extends Modification {
+        public FlipHoriz(int i) {
+            super(i);
+        }
+
+        public BufferedImage modify(BufferedImage image) {
+            BufferedImage imageCopy = deepCopy(image);
+
+            // Flip the image horizontally
+            AffineTransform tx = AffineTransform.getScaleInstance(-1, 1);
+            tx.translate(-image.getWidth(null), 0);
+            AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
+            op.filter(image, imageCopy);
+            image = imageCopy;
+            return image;
+        }
+    }
+
+    public static class FlipVert extends Modification {
+        public FlipVert(int i) {
+            super(i);
+        }
+
+        public BufferedImage modify(BufferedImage image) {
+            BufferedImage imageCopy = deepCopy(image);
+
+            // Flip the image vertically
+            AffineTransform tx = AffineTransform.getScaleInstance(1, -1);
+            tx.translate(0, -image.getHeight(null));
+            AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
+            op.filter(image, imageCopy);
+            image = imageCopy;
+            return image;
+        }
+    }
+
     private static AtomicLong recalcImageTS = new AtomicLong(0);
     private static Timer timer;
     private BufferedImage baseImage;
     private BufferedImage layerImage;
 
+    private List<Modification> modifications = new LinkedList<Modification>();
+
     public void loadImages(File file, File file2) {
         try {
             baseImage = ImageIO.read(file);
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(null, "Failed to load image file of [" + file.getAbsolutePath() + "]", "Error loading image",
+                    JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
+        }
+        try {
             layerImage = ImageIO.read(file2);
         } catch (IOException e) {
+            JOptionPane.showMessageDialog(null, "Failed to load image file of [" + file2.getAbsolutePath() + "]", "Error loading image",
+                    JOptionPane.ERROR_MESSAGE);
             e.printStackTrace();
         }
     }
 
     public BufferedImage mergeImages(int windowWidth, int windowHeight) throws IOException {
-        long start = System.currentTimeMillis();
+        setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        try {
+            long start = System.currentTimeMillis();
 
-        BufferedImage image = baseImage;
-        BufferedImage image2 = layerImage;
+            BufferedImage[] images = new BufferedImage[] { baseImage, layerImage };
 
-        final int imageWidth;
-        final int imageHeight;
+            final int imageWidth;
+            final int imageHeight;
 
-        imageWidth = image.getWidth();
-        imageHeight = image.getHeight();
+            imageWidth = images[0].getWidth();
+            imageHeight = images[0].getHeight();
 
-        // Get the smallest ratio
-        int width, height;
-        if (windowWidth == 0 && windowHeight == 0) {
-            width = imageWidth;
-            height = imageHeight;
-//            // Images should start off matching sizes, even if we are not
-//            // changing the size
-//            if (image2.getWidth() != width || image2.getHeight() != height) {
-//                image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
-//            }
-        } else if ((double) windowWidth / imageWidth < (double) windowHeight / imageHeight) {
-            width = windowWidth;
-            height = (int) ((double) imageHeight / imageWidth * width);
-        } else {
-            height = windowHeight;
-            width = (int) ((double) imageWidth / imageHeight * height);
-        }
-
-        // Resize first so everything happens a lot quicker and takes less memory
-        if (windowWidth != 0) {
-            image = resizeImage(image, width, height, BufferedImage.TYPE_INT_RGB);
-            image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
-        }
-
-        //--- Image modifications...
-        
-        // Rotations early, as change shape of image1
-        image = rotateImage(rotateCombo1.getSelectedItem(), image);
-        width = image.getWidth();
-        height = image.getHeight();
-        image2 = rotateImage(rotateCombo2.getSelectedItem(), image2);
-        if (width != image2.getWidth() || height != image2.getHeight()) {
-            // Resize again?
-            System.out.println("Extra resize to "+width+","+height);
-            image2 = resizeImage(image2, width, height, BufferedImage.TYPE_INT_RGB);
-        }
-
-        // Flips
-        image = flipImage(flipCombo1.getSelectedItem(), image);
-        image2 = flipImage(flipCombo2.getSelectedItem(), image2);
-
-        //--- End modifications
-        
-        // B&W etc styles
-        image = styleImage(style1, image);
-        image2 = styleImage(style2, image2);
-
-        System.out.println("Size is " + image.getWidth() + ", " + image.getHeight() + " and " + image2.getWidth() + ", " + image2.getHeight());     
-
-        // Merge
-        final BufferedImage ans = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
-        final int brightness1Value = brightness1.getValue();
-        final int brightness2Value = brightness2.getValue();
-        final boolean darknessWinsV = darknessWins.isSelected();
-        int p, q;
-        int r, g, b;
-        int origR, origG, origB;
-        int layerR, layerG, layerB;
-        for (int x = 0; x < image.getWidth(); ++x) {
-            for (int y = 0; y < image.getHeight(); ++y) {
-                p = image.getRGB(x, y); // & 0xff00;
-                q = image2.getRGB(x, y); // & 0xff;
-
-                // --- Change brightnesses
-                if (brightness1Value != 0) {
-                    origR = (p & 0xff0000) >> 16;
-                    origG = (p & 0xff00) >> 8;
-                    origB = p & 0xff;
-                    origR = Math.max(0, Math.min(0xff, origR + brightness1Value) << 16);
-                    origG = Math.max(0, Math.min(0xff, origG + brightness1Value) << 8);
-                    origB = Math.max(0, Math.min(0xff, origB + brightness1Value));
-                } else {
-                    origR = p & 0xff0000;
-                    origG = p & 0xff00;
-                    origB = p & 0xff;
-                }
-
-                if (brightness2Value != 0) {
-                    layerR = (q & 0xff0000) >> 16;
-                    layerG = (q & 0xff00) >> 8;
-                    layerB = q & 0xff;
-                    layerR = Math.max(0, Math.min(0xff, layerR + brightness2Value) << 16);
-                    layerG = Math.max(0, Math.min(0xff, layerG + brightness2Value) << 8);
-                    layerB = Math.max(0, Math.min(0xff, layerB + brightness2Value));
-                } else {
-                    layerR = q & 0xff0000;
-                    layerG = q & 0xff00;
-                    layerB = q & 0xff;
-                }
-
-                // Merge operations
-                if (darknessWinsV) {
-                    // Least brightess wins
-                    int origY = (origR + origR + origR + origB + origG + origG + origG + origG) >> 3;
-                    int layerY = (layerR + layerR + layerR + layerB + layerG + layerG + layerG + layerG) >> 3;
-                    if (origY < layerY) {
-                        r = origR;
-                        g = origG;
-                        b = origB;
-                    } else {
-                        r = layerR;
-                        g = layerG;
-                        b = layerB;
-                    }
-                } else {
-                    // Simple merge/addition
-                    r = Math.max(origR, layerR);
-                    g = Math.max(origG, layerG);
-                    b = Math.max(origB, layerB);
-                }
-
-                // Choose combination operation, plus brightness shifts
-                // (multiply and max)
-                // ans.setRGB(x, y, p | q);
-                ans.setRGB(x, y, r + g + b);
+            // Get the smallest ratio
+            int width, height;
+            if (windowWidth == 0 && windowHeight == 0) {
+                width = imageWidth;
+                height = imageHeight;
+                // // Images should start off matching sizes, even if we are not
+                // // changing the size
+                // if (image2.getWidth() != width || image2.getHeight() !=
+                // height) {
+                // image2 = resizeImage(image2, width, height,
+                // BufferedImage.TYPE_INT_RGB);
+                // }
+            } else if ((double) windowWidth / imageWidth < (double) windowHeight / imageHeight) {
+                width = windowWidth;
+                height = (int) ((double) imageHeight / imageWidth * width);
+            } else {
+                height = windowHeight;
+                width = (int) ((double) imageWidth / imageHeight * height);
             }
-        }
-        System.out.println("Done in " + (System.currentTimeMillis() - start));
-        return ans;
-    }
 
-    static private Map<String, Integer> rotateNameToCount = new HashMap<String, Integer>();
-    static {
-        rotateNameToCount.put("No-rotate", 0);
-        rotateNameToCount.put("Right", 1);
-        rotateNameToCount.put("Full", 2);
-        rotateNameToCount.put("Left", 3);
-    }
-    private BufferedImage rotateImage(Object selectedItem, BufferedImage image) {
-        for (int count = 0; count < rotateNameToCount.get(selectedItem); count++) {
-            image = rotateCw(image); // , -90);
+            // Resize first so everything happens a lot quicker and takes less
+            // memory
+            if (windowWidth != 0) {
+                for (int i = 0; i < images.length; i++) {
+                    images[i] = resizeImage(images[i], width, height, BufferedImage.TYPE_INT_RGB);
+                }
+            }
+
+            // Zoom and Pan
+            if ( resizeAction1 != null ) {
+                images[0] = resizeAction1.modify(images[0]);
+            }
+            if ( resizeAction2 != null ) {
+                images[1] = resizeAction2.modify(images[1]);
+            }
+
+            // --- Image modifications...
+            String str = "";
+            for (Modification modification : modifications) {
+                str += modification.getName() + ", ";
+            }
+            System.out.println("Applying: " + str);
+            for (Modification modification : modifications) {
+                images[modification.imageIndex] = modification.modify(images[modification.imageIndex]);
+            }
+
+            width = images[0].getWidth();
+            height = images[0].getHeight();
+            if (width != images[1].getWidth() || height != images[1].getHeight()) {
+                // Resize again?
+                System.out.println("Extra resize to " + width + "," + height);
+                images[1] = resizeImage(images[1], width, height, BufferedImage.TYPE_INT_RGB);
+            }
+
+            // --- End modifications
+
+            // B&W etc styles
+            images[0] = styleImage(style1.getValue(), images[0]);
+            images[1] = styleImage(style2.getValue(), images[1]);
+
+            System.out
+                    .println("Size is " + images[0].getWidth() + ", " + images[0].getHeight() + " and " + images[1].getWidth() + ", " + images[1].getHeight());
+
+            // Merge
+            final BufferedImage ans = new BufferedImage(images[0].getWidth(), images[0].getHeight(), BufferedImage.TYPE_INT_RGB);
+            final int brightness1Value = brightness1.getValue();
+            final int brightness2Value = brightness2.getValue();
+            final boolean darknessWinsV = darknessWins.isSelected();
+            int p, q;
+            int r, g, b;
+            int origR, origG, origB;
+            int layerR, layerG, layerB;
+            for (int x = 0; x < images[0].getWidth(); ++x) {
+                for (int y = 0; y < images[0].getHeight(); ++y) {
+                    p = images[0].getRGB(x, y); // & 0xff00;
+                    q = images[1].getRGB(x, y); // & 0xff;
+
+                    // --- Change brightnesses
+                    if (brightness1Value != 0) {
+                        origR = (p & 0xff0000) >> 16;
+                        origG = (p & 0xff00) >> 8;
+                        origB = p & 0xff;
+                        origR = Math.max(0, Math.min(0xff, origR + brightness1Value) << 16);
+                        origG = Math.max(0, Math.min(0xff, origG + brightness1Value) << 8);
+                        origB = Math.max(0, Math.min(0xff, origB + brightness1Value));
+                    } else {
+                        origR = p & 0xff0000;
+                        origG = p & 0xff00;
+                        origB = p & 0xff;
+                    }
+
+                    if (brightness2Value != 0) {
+                        layerR = (q & 0xff0000) >> 16;
+                        layerG = (q & 0xff00) >> 8;
+                        layerB = q & 0xff;
+                        layerR = Math.max(0, Math.min(0xff, layerR + brightness2Value) << 16);
+                        layerG = Math.max(0, Math.min(0xff, layerG + brightness2Value) << 8);
+                        layerB = Math.max(0, Math.min(0xff, layerB + brightness2Value));
+                    } else {
+                        layerR = q & 0xff0000;
+                        layerG = q & 0xff00;
+                        layerB = q & 0xff;
+                    }
+
+                    // Merge operations
+                    if (darknessWinsV) {
+                        // Least brightess wins
+                        int origY = (origR + origR + origR + origB + origG + origG + origG + origG) >> 3;
+                        int layerY = (layerR + layerR + layerR + layerB + layerG + layerG + layerG + layerG) >> 3;
+                        if (origY < layerY) {
+                            r = origR;
+                            g = origG;
+                            b = origB;
+                        } else {
+                            r = layerR;
+                            g = layerG;
+                            b = layerB;
+                        }
+                    } else {
+                        // Simple merge/addition
+                        r = Math.max(origR, layerR);
+                        g = Math.max(origG, layerG);
+                        b = Math.max(origB, layerB);
+                    }
+
+                    // Choose combination operation, plus brightness shifts
+                    // (multiply and max)
+                    // ans.setRGB(x, y, p | q);
+                    ans.setRGB(x, y, r + g + b);
+                }
+            }
+            System.out.println("Done in " + (System.currentTimeMillis() - start));
+            return ans;
+        } finally {
+            setCursor(Cursor.getDefaultCursor());
         }
-        return image;
     }
 
     public static BufferedImage rotateCw(BufferedImage img) {
@@ -209,41 +336,17 @@ public class Main extends JFrame {
         return newImage;
     }
 
-    private BufferedImage flipImage(Object selectedItem, BufferedImage image) {
-        if ("Horizontal".equals(selectedItem) || "Both".equals(selectedItem)) {
-            BufferedImage imageCopy = deepCopy(image);
-
-            // Flip the image horizontally
-            AffineTransform tx = AffineTransform.getScaleInstance(-1, 1);
-            tx.translate(-image.getWidth(null), 0);
-            AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
-            op.filter(image, imageCopy);
-            image = imageCopy;
-        }
-        if ("Vertical".equals(selectedItem) || "Both".equals(selectedItem)) {
-            BufferedImage imageCopy = deepCopy(image);
-
-            // Flip the image vertically
-            AffineTransform tx = AffineTransform.getScaleInstance(1, -1);
-            tx.translate(0, -image.getHeight(null));
-            AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
-            op.filter(image, imageCopy);
-            image = imageCopy;
-        }
-        return image;
-    }
-
-    private BufferedImage styleImage(JComboBox styleCombo, BufferedImage image) {
-        if ("B&W".equals(styleCombo.getSelectedItem())) {
+    private BufferedImage styleImage(String style, BufferedImage image) {
+        if ("B&W".equals(style)) {
             ColorConvertOp op = new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
             BufferedImage imageCopy = deepCopy(image);
             op.filter(image, imageCopy);
             return imageCopy;
-        } else if ("Sepia".equals(styleCombo.getSelectedItem())) {
+        } else if ("Sepia".equals(style)) {
             BufferedImage imageCopy = deepCopy(image);
             applySepiaFilter(imageCopy, 20);
             return imageCopy;
-        } else if ("Negative".equals(styleCombo.getSelectedItem())) {
+        } else if ("Negative".equals(style)) {
             BufferedImage imageCopy = deepCopy(image);
             applyNegativeFilter(imageCopy);
             return imageCopy;
@@ -332,7 +435,7 @@ public class Main extends JFrame {
         raster.setPixels(0, 0, w, h, pixels);
     }
 
-    static BufferedImage deepCopy(BufferedImage bi) {
+    public static BufferedImage deepCopy(BufferedImage bi) {
         ColorModel cm = bi.getColorModel();
         boolean isAlphaPremultiplied = cm.isAlphaPremultiplied();
         WritableRaster raster = bi.copyData(null);
@@ -355,9 +458,16 @@ public class Main extends JFrame {
     public void save() {
         try {
             File file = getSaveAsFile(this, prevSaveFile);
-            BufferedImage mergedImage = mergeImages(0, 0);
-            ImageIO.write(mergedImage, "jpg", file);
-            prevSaveFile = file;
+            if (file != null) {
+                BufferedImage mergedImage = mergeImages(0, 0);
+                try {
+                    setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+                    ImageIO.write(mergedImage, "jpg", file);
+                } finally {
+                    setCursor(Cursor.getDefaultCursor());
+                }
+                prevSaveFile = file;
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -367,20 +477,36 @@ public class Main extends JFrame {
     private JSlider brightness1;
     private JSlider brightness2;
     private JCheckBox darknessWins;
-    private JComboBox style1;
-    private JComboBox style2;
-    private JComboBox flipCombo1;
-    private JComboBox flipCombo2;
-    private JComboBox rotateCombo1;
-    private JComboBox rotateCombo2;
-    private static File filename1 = new File("/Users/dclark/public/face1.jpg");
-    private static File filename2 = new File("/Users/dclark/public/layer1.jpg");
-    private static File prevSaveFile = new File("/Users/dclark/tmp/mergedImage.jpg");
+    private RadioChoice style1;
+    private RadioChoice style2;
+
+    public class FileLabel extends JTextField {
+        public FileLabel(String filename) {
+            setText(filename);
+            setEditable(false);
+        }
+
+        public File getFile() {
+            return new File(getText());
+        }
+
+        public void setFile(File file) {
+            setText(file.getAbsolutePath());
+        }
+    }
+
+    private String username = System.getProperty("user.name");
+    private FileLabel filename1 = new FileLabel("/Users/" + username + "/public/face1.jpg");
+    private FileLabel filename2 = new FileLabel("/Users/" + username + "/public/layer1.jpg");
+    private File prevSaveFile = new File("/Users/" + username + "/tmp/mergedImage.jpg");
+    protected ResizeMod resizeAction1;
+    protected ResizeMod resizeAction2;
 
     public Main(String title) {
         super(title);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         imagePanel = new ImagePanel();
+        imagePanel.setPreferredSize(new Dimension(300, 300));
         imagePanel.addComponentListener(new ComponentAdapter() {
             @Override
             public void componentResized(ComponentEvent arg0) {
@@ -390,7 +516,13 @@ public class Main extends JFrame {
                 redoMerge();
             }
         });
-        loadImages(filename1, filename2);
+        if (!filename1.getFile().exists()) {
+            filename1.setFile(new File("/Users/" + username + "/Pictures"));
+        }
+        if (!filename2.getFile().exists()) {
+            filename2.setFile(new File("/Users/" + username + "/Pictures"));
+        }
+        loadImages(filename1.getFile(), filename2.getFile());
         getContentPane().setLayout(new BorderLayout());
         getContentPane().add(imagePanel);
         JButton saveButton = new JButton("Save");
@@ -417,11 +549,11 @@ public class Main extends JFrame {
         load1.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                File file = getImageFile(Main.this, filename1);
+                File file = getImageFile(Main.this, filename1.getFile());
                 if (file != null) {
                     try {
                         baseImage = ImageIO.read(file);
-                        filename1 = file;
+                        filename1.setFile(file);
                         // layerImage = ImageIO.read(new File(file2));
                         redoMerge();
                     } catch (IOException e) {
@@ -435,11 +567,11 @@ public class Main extends JFrame {
         load2.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                File file = getImageFile(Main.this, filename2);
+                File file = getImageFile(Main.this, filename2.getFile());
                 if (file != null) {
                     try {
                         layerImage = ImageIO.read(file);
-                        filename2 = file;
+                        filename2.setFile(file);
                         // layerImage = ImageIO.read(new File(file2));
                         redoMerge();
                     } catch (IOException e) {
@@ -451,19 +583,15 @@ public class Main extends JFrame {
 
         String[] styleStrings = { "Normal", "B&W", "Sepia", "Negative" };
 
+        style1 = new RadioChoice(styleStrings);
+        style2 = new RadioChoice(styleStrings);
+
         ActionListener alRedo = new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
                 redoMerge();
             }
         };
-        style1 = new JComboBox(styleStrings);
-        style1.setSelectedIndex(0);
-        style1.addActionListener(alRedo);
-
-        style2 = new JComboBox(styleStrings);
-        style2.setSelectedIndex(0);
-        style2.addActionListener(alRedo);
 
         brightness1 = new JSlider(JSlider.HORIZONTAL, -256, 256, 0);
         brightness1.addChangeListener(new ChangeListener() {
@@ -492,24 +620,6 @@ public class Main extends JFrame {
         brightness2.setMinorTickSpacing(8);
         brightness2.setPaintTicks(true);
 
-        String[] flipChoices = new String[] { "No-flip", "Vertical", "Horizontal", "Both" };
-        flipCombo1 = new JComboBox(flipChoices);
-        flipCombo1.setSelectedIndex(0);
-        flipCombo1.addActionListener(alRedo);
-
-        flipCombo2 = new JComboBox(flipChoices);
-        flipCombo2.setSelectedIndex(0);
-        flipCombo2.addActionListener(alRedo);
-
-        String[] rotateChoice = new String[] { "No-rotate", "Left", "Right", "Full" };
-        rotateCombo1 = new JComboBox(rotateChoice);
-        rotateCombo1.setSelectedIndex(0);
-        rotateCombo1.addActionListener(alRedo);
-
-        rotateCombo2 = new JComboBox(rotateChoice);
-        rotateCombo2.setSelectedIndex(0);
-        rotateCombo2.addActionListener(alRedo);
-
         darknessWins = new JCheckBox("Darkness", false);
         darknessWins.addChangeListener(onChangeRedo);
 
@@ -522,22 +632,98 @@ public class Main extends JFrame {
             }
         });
 
-        controls.add(load1);
+        JButton resize1 = new JButton("Resize");
+        resize1.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                ImageResizerFrame f = new ImageResizerFrame(baseImage, resizeAction1);
+                resizeAction1 = f.result;
+                redoMerge();
+            }
+        });
+        JButton resize2 = new JButton("Resize");
+        resize2.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                ImageResizerFrame f = new ImageResizerFrame(layerImage, resizeAction2);
+                resizeAction2 = f.result;
+                redoMerge();
+            }
+        });
+
+        controls.add(flow(filename1, load1));
+        controls.add(resize1);
         controls.add(style1);
-        controls.add(flipCombo1);
-        controls.add(rotateCombo1);
+        controls.add(flow(makeButton(new FlipVert(0)), makeButton(new FlipHoriz(0))));
+        controls.add(flow(makeButton(new RotateLeft(0)), makeButton(new RotateRight(0))));
         controls.add(brightness1);
-        controls.add(load2);
+
+        controls.add(flow(filename2, load2));
+        controls.add(resize2);
         controls.add(style2);
-        controls.add(flipCombo2);
-        controls.add(rotateCombo2);
+        controls.add(flow(makeButton(new FlipVert(1)), makeButton(new FlipHoriz(1))));
+        controls.add(flow(makeButton(new RotateLeft(1)), makeButton(new RotateRight(1))));
         controls.add(brightness2);
         controls.add(darknessWins);
         controls.add(reset);
 
         getContentPane().add(controls, BorderLayout.EAST);
+        pack();
 
         System.out.println("Shown window");
+    }
+
+    public class RadioChoice extends JPanel {
+        private volatile String value;
+
+        public RadioChoice(String... labels) {
+            setLayout(new FlowLayout());
+            boolean selected = true;
+            ButtonGroup grp = new ButtonGroup();
+            for (String label : labels) {
+                JRadioButton b = makeRadioButton(label, selected);
+                grp.add(b);
+                add(b);
+                selected = false;
+            }
+        }
+
+        private JRadioButton makeRadioButton(final String label, boolean selected) {
+            JRadioButton b = new JRadioButton(label);
+            b.setSelected(selected);
+            b.addActionListener(new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent arg0) {
+                    value = label;
+                    redoMerge();
+                }
+            });
+            return b;
+        }
+
+        public String getValue() {
+            return value;
+        }
+    }
+
+    public static Component flow(JComponent... buttons) {
+        JPanel p = new JPanel(new FlowLayout());
+        for (JComponent button : buttons) {
+            p.add(button);
+        }
+        return p;
+    }
+
+    private JButton makeButton(final Modification mod) {
+        JButton but = new JButton(mod.getName());
+        but.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                modifications.add(mod);
+                redoMerge();
+            }
+        });
+        return but;
     }
 
     private File getImageFile(Component parent, File prevFile) {
@@ -587,6 +773,8 @@ public class Main extends JFrame {
             }
         }
     }
+
+    public static String version = "0.4";
 
     public static void main(String[] args) {
         JFrame frame = new Main("Blend " + version);
