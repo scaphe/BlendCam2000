@@ -11,18 +11,16 @@ import java.awt.event.MouseEvent;
 import java.awt.event.MouseMotionAdapter;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.awt.event.WindowStateListener;
 import java.awt.image.BufferedImage;
 
 import javax.swing.JButton;
 import javax.swing.JDialog;
-import javax.swing.JFrame;
 
 import com.p944.blend.Main.ResizeMod;
 
 public class ImageResizerFrame extends JDialog {
 
-    private final BufferedImage origImage;
+    private BufferedImage origImage;
     private ImagePanel imagePanel;
     public MouseEvent down;
     public MouseEvent up;
@@ -115,6 +113,7 @@ public class ImageResizerFrame extends JDialog {
                 if ( prev != null ) {
                     int w = imagePanel.imageDrawnWidth;
                     int h = imagePanel.imageDrawnHeight;
+                    ImageResizerFrame.this.origImage = Main.resizeImage(ImageResizerFrame.this.origImage, w, w, ImageResizerFrame.this.origImage.getType());
                     zoom = prev.zoom;
                     offsetX = prev.offsetXPc*w;
                     offsetY = prev.offsetYPc*h;

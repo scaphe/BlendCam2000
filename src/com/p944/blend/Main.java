@@ -1,6 +1,7 @@
 package com.p944.blend;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
@@ -34,15 +35,15 @@ import javax.swing.JCheckBox;
 import javax.swing.JComponent;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JRadioButton;
+import javax.swing.JSeparator;
 import javax.swing.JSlider;
 import javax.swing.JTextField;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
-
-import com.p944.blend.Main.ResizeMod;
 
 public class Main extends JFrame {
 
@@ -84,7 +85,7 @@ public class Main extends JFrame {
             BufferedImage resized1 = new BufferedImage(w, h, image.getType());
             Graphics2D g = resized1.createGraphics();
             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            g.drawImage(image, 0, 0, (int) (w * zoom), (int) (h * zoom), x, y, x+w, y+h, null);
+            g.drawImage(image, 0, 0, (int) (w * zoom), (int) (h * zoom), x, y, x + w, y + h, null);
             g.dispose();
             return resized1;
         }
@@ -151,24 +152,27 @@ public class Main extends JFrame {
 
     private static AtomicLong recalcImageTS = new AtomicLong(0);
     private static Timer timer;
-    private BufferedImage baseImage;
-    private BufferedImage layerImage;
+    BufferedImage[] images = new BufferedImage[] { null, null };
 
-    private List<Modification> modifications = new LinkedList<Modification>();
-
-    public void loadImages(File file, File file2) {
+    public void loadImages(boolean showError) {
         try {
-            baseImage = ImageIO.read(file);
+            images[0] = null;
+            images[0] = ImageIO.read(filename1.getFile());
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(null, "Failed to load image file of [" + file.getAbsolutePath() + "]", "Error loading image",
-                    JOptionPane.ERROR_MESSAGE);
+            if (showError) {
+                JOptionPane.showMessageDialog(null, "Failed to load image file of [" + filename1.getFile().getAbsolutePath() + "]", "Error loading image",
+                        JOptionPane.ERROR_MESSAGE);
+            }
             e.printStackTrace();
         }
         try {
-            layerImage = ImageIO.read(file2);
+            images[1] = null;
+            images[1] = ImageIO.read(filename2.getFile());
         } catch (IOException e) {
-            JOptionPane.showMessageDialog(null, "Failed to load image file of [" + file2.getAbsolutePath() + "]", "Error loading image",
-                    JOptionPane.ERROR_MESSAGE);
+            if (showError) {
+                JOptionPane.showMessageDialog(null, "Failed to load image file of [" + filename2.getFile().getAbsolutePath() + "]", "Error loading image",
+                        JOptionPane.ERROR_MESSAGE);
+            }
             e.printStackTrace();
         }
     }
@@ -178,13 +182,20 @@ public class Main extends JFrame {
         try {
             long start = System.currentTimeMillis();
 
-            BufferedImage[] images = new BufferedImage[] { baseImage, layerImage };
-
             final int imageWidth;
             final int imageHeight;
 
-            imageWidth = images[0].getWidth();
-            imageHeight = images[0].getHeight();
+            BufferedImage[] copyOfImages = new BufferedImage[] { images[0], images[1] };
+            if (copyOfImages[0] != null) {
+                imageWidth = copyOfImages[0].getWidth();
+                imageHeight = copyOfImages[0].getHeight();
+            } else if ( copyOfImages[1] != null){
+                imageWidth = copyOfImages[1].getWidth();
+                imageHeight = copyOfImages[1].getHeight();
+            } else {
+                imageWidth = 200;
+                imageHeight = 200;
+            }
 
             // Get the smallest ratio
             int width, height;
@@ -209,17 +220,19 @@ public class Main extends JFrame {
             // Resize first so everything happens a lot quicker and takes less
             // memory
             if (windowWidth != 0) {
-                for (int i = 0; i < images.length; i++) {
-                    images[i] = resizeImage(images[i], width, height, BufferedImage.TYPE_INT_RGB);
+                for (int i = 0; i < copyOfImages.length; i++) {
+                    if (copyOfImages[i] != null) {
+                        copyOfImages[i] = resizeImage(copyOfImages[i], width, height, BufferedImage.TYPE_INT_RGB);
+                    }
                 }
             }
 
             // Zoom and Pan
-            if ( resizeAction1 != null ) {
-                images[0] = resizeAction1.modify(images[0]);
+            if (resizeAction1 != null) {
+                copyOfImages[0] = resizeAction1.modify(copyOfImages[0]);
             }
-            if ( resizeAction2 != null ) {
-                images[1] = resizeAction2.modify(images[1]);
+            if (resizeAction2 != null) {
+                copyOfImages[1] = resizeAction2.modify(copyOfImages[1]);
             }
 
             // --- Image modifications...
@@ -229,28 +242,31 @@ public class Main extends JFrame {
             }
             System.out.println("Applying: " + str);
             for (Modification modification : modifications) {
-                images[modification.imageIndex] = modification.modify(images[modification.imageIndex]);
+                copyOfImages[modification.imageIndex] = modification.modify(copyOfImages[modification.imageIndex]);
             }
 
-            width = images[0].getWidth();
-            height = images[0].getHeight();
-            if (width != images[1].getWidth() || height != images[1].getHeight()) {
-                // Resize again?
-                System.out.println("Extra resize to " + width + "," + height);
-                images[1] = resizeImage(images[1], width, height, BufferedImage.TYPE_INT_RGB);
+            if (copyOfImages[0] != null) {
+                width = copyOfImages[0].getWidth();
+                height = copyOfImages[0].getHeight();
+                if ( copyOfImages[1] != null ) {
+                    if (width != copyOfImages[1].getWidth() || height != copyOfImages[1].getHeight()) {
+                        // Resize again?
+                        System.out.println("Extra resize to " + width + "," + height);
+                        copyOfImages[1] = resizeImage(copyOfImages[1], width, height, BufferedImage.TYPE_INT_RGB);
+                    }
+                }
             }
 
             // --- End modifications
 
             // B&W etc styles
-            images[0] = styleImage(style1.getValue(), images[0]);
-            images[1] = styleImage(style2.getValue(), images[1]);
+            copyOfImages[0] = styleImage(style1.getValue(), copyOfImages[0]);
+            copyOfImages[1] = styleImage(style2.getValue(), copyOfImages[1]);
 
-            System.out
-                    .println("Size is " + images[0].getWidth() + ", " + images[0].getHeight() + " and " + images[1].getWidth() + ", " + images[1].getHeight());
+            // System.out.println("Size is " + width + ", " + height + " and " + images[1].getWidth() + ", " + images[1].getHeight());
 
             // Merge
-            final BufferedImage ans = new BufferedImage(images[0].getWidth(), images[0].getHeight(), BufferedImage.TYPE_INT_RGB);
+            final BufferedImage ans = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
             final int brightness1Value = brightness1.getValue();
             final int brightness2Value = brightness2.getValue();
             final boolean darknessWinsV = darknessWins.isSelected();
@@ -258,10 +274,18 @@ public class Main extends JFrame {
             int r, g, b;
             int origR, origG, origB;
             int layerR, layerG, layerB;
-            for (int x = 0; x < images[0].getWidth(); ++x) {
-                for (int y = 0; y < images[0].getHeight(); ++y) {
-                    p = images[0].getRGB(x, y); // & 0xff00;
-                    q = images[1].getRGB(x, y); // & 0xff;
+            for (int x = 0; x < width; ++x) {
+                for (int y = 0; y < height; ++y) {
+                    if ( copyOfImages[0] == null ) {
+                        p = 0x0;
+                    } else {
+                        p = copyOfImages[0].getRGB(x, y); // & 0xff00;
+                    }
+                    if ( copyOfImages[1] == null ) {
+                        q = 0x0;
+                    } else {
+                        q = copyOfImages[1].getRGB(x, y); // & 0xff;
+                    }
 
                     // --- Change brightnesses
                     if (brightness1Value != 0) {
@@ -337,6 +361,8 @@ public class Main extends JFrame {
     }
 
     private BufferedImage styleImage(String style, BufferedImage image) {
+        if (image == null)
+            return null;
         if ("B&W".equals(style)) {
             ColorConvertOp op = new ColorConvertOp(ColorSpace.getInstance(ColorSpace.CS_GRAY), null);
             BufferedImage imageCopy = deepCopy(image);
@@ -442,15 +468,8 @@ public class Main extends JFrame {
         return new BufferedImage(cm, raster, isAlphaPremultiplied, null);
     }
 
-    private static BufferedImage resizeImage(BufferedImage origImage, int width, int height, int typeIntRgb) {
+    public static BufferedImage resizeImage(BufferedImage origImage, int width, int height, int typeIntRgb) {
         BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
-        // ImageObserver imgObs = new ImageObserver() {
-        // @Override
-        // public boolean imageUpdate(Image arg0, int arg1, int arg2, int arg3,
-        // int arg4, int arg5) {
-        // return true;
-        // }
-        // };
         image.getGraphics().drawImage(origImage, 0, 0, width, height, null);
         return image;
     }
@@ -473,16 +492,12 @@ public class Main extends JFrame {
         }
     }
 
-    private ImagePanel imagePanel;
-    private JSlider brightness1;
-    private JSlider brightness2;
-    private JCheckBox darknessWins;
-    private RadioChoice style1;
-    private RadioChoice style2;
-
     public class FileLabel extends JTextField {
+        private Color origBg;
+
         public FileLabel(String filename) {
-            setText(filename);
+            super(filename, 15);
+            origBg = getBackground();
             setEditable(false);
         }
 
@@ -492,6 +507,15 @@ public class Main extends JFrame {
 
         public void setFile(File file) {
             setText(file.getAbsolutePath());
+            if (file.exists() && file.isFile()) {
+                setBackground(origBg);
+            } else {
+                setBackground(Color.PINK);
+            }
+        }
+
+        public void clear() {
+            setFile(new File("/Users/" + username + "/Pictures"));
         }
     }
 
@@ -499,8 +523,17 @@ public class Main extends JFrame {
     private FileLabel filename1 = new FileLabel("/Users/" + username + "/public/face1.jpg");
     private FileLabel filename2 = new FileLabel("/Users/" + username + "/public/layer1.jpg");
     private File prevSaveFile = new File("/Users/" + username + "/tmp/mergedImage.jpg");
+
+    private ImagePanel imagePanel;
+
     protected ResizeMod resizeAction1;
     protected ResizeMod resizeAction2;
+    private JSlider brightness1;
+    private JSlider brightness2;
+    private JCheckBox darknessWins;
+    private RadioChoice style1;
+    private RadioChoice style2;
+    private List<Modification> modifications = new LinkedList<Modification>();
 
     public Main(String title) {
         super(title);
@@ -517,14 +550,15 @@ public class Main extends JFrame {
             }
         });
         if (!filename1.getFile().exists()) {
-            filename1.setFile(new File("/Users/" + username + "/Pictures"));
+            filename1.clear();
         }
         if (!filename2.getFile().exists()) {
-            filename2.setFile(new File("/Users/" + username + "/Pictures"));
+            filename2.clear();
         }
-        loadImages(filename1.getFile(), filename2.getFile());
+        loadImages(false);
         getContentPane().setLayout(new BorderLayout());
         getContentPane().add(imagePanel);
+
         JButton saveButton = new JButton("Save");
         saveButton.addActionListener(new ActionListener() {
             @Override
@@ -532,7 +566,48 @@ public class Main extends JFrame {
                 save();
             }
         });
-        getContentPane().add(saveButton, BorderLayout.SOUTH);
+
+        JButton clearButton = new JButton("Reset-All");
+        clearButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                if (JOptionPane.showConfirmDialog(Main.this, "Are you sure you want to Reset All?", "Confirm Reset", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                    filename1.clear();
+                    filename2.clear();
+                    modifications.clear();
+                    resetBrightnesses();
+                    images[0] = null;
+                    images[1] = null;
+                    darknessWins.setSelected(false);
+                    style1.reset();
+                    style2.reset();
+                    resizeAction1 = null;
+                    resizeAction2 = null;
+                    redoMerge();
+                }
+            }
+        });
+
+        JButton promoteButton = new JButton("Promote");
+        promoteButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                if (JOptionPane.showConfirmDialog(Main.this, "Promote merged to image 1?", "Confirm Promote", JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION) {
+                    try {
+                        BufferedImage mergedImage = mergeImages(0, 0);
+                        filename1.setFile(new File("--promoted--"));
+                        filename2.clear();
+                        images[0] = mergedImage;
+                        images[1] = null;
+                        redoMerge();
+                    } catch (IOException e) {
+                        JOptionPane.showMessageDialog(Main.this, "Failed merge with " + e);
+                        e.printStackTrace();
+                    }
+                }
+            }
+        });
+
         setSize(600, 400);
         timer = new Timer();
         timer.schedule(new TimerTask() {
@@ -545,39 +620,19 @@ public class Main extends JFrame {
         JPanel controls = new JPanel();
         controls.setLayout(new BoxLayout(controls, BoxLayout.PAGE_AXIS));
 
-        JButton load1 = new JButton("Load-1");
-        load1.addActionListener(new ActionListener() {
+        JButton load1 = new JButton("Load");
+        load1.addActionListener(new LoadFileActionListener(filename1) {
             @Override
-            public void actionPerformed(ActionEvent arg0) {
-                File file = getImageFile(Main.this, filename1.getFile());
-                if (file != null) {
-                    try {
-                        baseImage = ImageIO.read(file);
-                        filename1.setFile(file);
-                        // layerImage = ImageIO.read(new File(file2));
-                        redoMerge();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
+            protected void setImage(BufferedImage image) {
+                images[0] = image;
             }
         });
 
-        JButton load2 = new JButton("Load-2");
-        load2.addActionListener(new ActionListener() {
+        JButton load2 = new JButton("Load");
+        load2.addActionListener(new LoadFileActionListener(filename2) {
             @Override
-            public void actionPerformed(ActionEvent arg0) {
-                File file = getImageFile(Main.this, filename2.getFile());
-                if (file != null) {
-                    try {
-                        layerImage = ImageIO.read(file);
-                        filename2.setFile(file);
-                        // layerImage = ImageIO.read(new File(file2));
-                        redoMerge();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    }
-                }
+            protected void setImage(BufferedImage image) {
+                images[1] = image;
             }
         });
 
@@ -586,48 +641,23 @@ public class Main extends JFrame {
         style1 = new RadioChoice(styleStrings);
         style2 = new RadioChoice(styleStrings);
 
-        ActionListener alRedo = new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent arg0) {
-                redoMerge();
-            }
-        };
+        brightness1 = makeSlider(-256, 256, 64, 8);
+        brightness2 = makeSlider(-256, 256, 64, 8);
 
-        brightness1 = new JSlider(JSlider.HORIZONTAL, -256, 256, 0);
-        brightness1.addChangeListener(new ChangeListener() {
-            @Override
-            public void stateChanged(ChangeEvent arg0) {
-                redoMerge();
-            }
-        });
-
-        // Turn on labels at major tick marks.
-        brightness1.setMajorTickSpacing(64);
-        brightness1.setMinorTickSpacing(8);
-        brightness1.setPaintTicks(true);
-
-        brightness2 = new JSlider(JSlider.HORIZONTAL, -256, 256, 0);
-        ChangeListener onChangeRedo = new ChangeListener() {
-            @Override
-            public void stateChanged(ChangeEvent arg0) {
-                redoMerge();
-            }
-        };
-        brightness2.addChangeListener(onChangeRedo);
-
-        // Turn on labels at major tick marks.
-        brightness2.setMajorTickSpacing(64);
-        brightness2.setMinorTickSpacing(8);
-        brightness2.setPaintTicks(true);
-
-        darknessWins = new JCheckBox("Darkness", false);
+        darknessWins = new JCheckBox("Darkness Wins", false);
         darknessWins.addChangeListener(onChangeRedo);
 
-        JButton reset = new JButton("Reset");
-        reset.addActionListener(new ActionListener() {
+        JButton reset1 = new JButton("Reset");
+        reset1.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
                 brightness1.setValue(0);
+            }
+        });
+        JButton reset2 = new JButton("Reset");
+        reset2.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
                 brightness2.setValue(0);
             }
         });
@@ -636,7 +666,7 @@ public class Main extends JFrame {
         resize1.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                ImageResizerFrame f = new ImageResizerFrame(baseImage, resizeAction1);
+                ImageResizerFrame f = new ImageResizerFrame(images[0], resizeAction1);
                 resizeAction1 = f.result;
                 redoMerge();
             }
@@ -645,36 +675,108 @@ public class Main extends JFrame {
         resize2.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                ImageResizerFrame f = new ImageResizerFrame(layerImage, resizeAction2);
+                ImageResizerFrame f = new ImageResizerFrame(images[1], resizeAction2);
                 resizeAction2 = f.result;
                 redoMerge();
             }
         });
 
-        controls.add(flow(filename1, load1));
+        controls.add(flow(new JLabel("Image 1:"), filename1, load1));
         controls.add(resize1);
         controls.add(style1);
-        controls.add(flow(makeButton(new FlipVert(0)), makeButton(new FlipHoriz(0))));
-        controls.add(flow(makeButton(new RotateLeft(0)), makeButton(new RotateRight(0))));
-        controls.add(brightness1);
+        controls.add(flow(makeButton(new FlipVert(0)), makeButton(new FlipHoriz(0)),
+                    makeButton(new RotateLeft(0)), makeButton(new RotateRight(0))));
+        controls.add(borderHoriz(null, brightness1, panel(reset1)));
 
-        controls.add(flow(filename2, load2));
+        controls.add(new JSeparator());
+        controls.add(borderHoriz(new JLabel("Image 2:"), filename2, load2));
         controls.add(resize2);
         controls.add(style2);
-        controls.add(flow(makeButton(new FlipVert(1)), makeButton(new FlipHoriz(1))));
-        controls.add(flow(makeButton(new RotateLeft(1)), makeButton(new RotateRight(1))));
-        controls.add(brightness2);
+        controls.add(flow(makeButton(new FlipVert(1)), makeButton(new FlipHoriz(1)), 
+                makeButton(new RotateLeft(1)), makeButton(new RotateRight(1))));
+        controls.add(borderHoriz(null, brightness2, panel(reset2)));
+        controls.add(new JSeparator());
         controls.add(darknessWins);
-        controls.add(reset);
 
-        getContentPane().add(controls, BorderLayout.EAST);
+        getContentPane().add(panel(controls), BorderLayout.EAST);
+        getContentPane().add(flow(clearButton, promoteButton, saveButton), BorderLayout.SOUTH);
         pack();
 
         System.out.println("Shown window");
     }
 
+    ChangeListener onChangeRedo = new ChangeListener() {
+        @Override
+        public void stateChanged(ChangeEvent arg0) {
+            redoMerge();
+        }
+    };
+    
+    private JSlider makeSlider(int min, int max, int major, int minor) {
+        JSlider slider = new JSlider(JSlider.HORIZONTAL, min, max, 0);
+        slider.addChangeListener(new ChangeListener() {
+            @Override
+            public void stateChanged(ChangeEvent arg0) {
+                redoMerge();
+            }
+        });
+
+        // Turn on labels at major tick marks.
+        slider.setMajorTickSpacing(major);
+        slider.setMinorTickSpacing(minor);
+        slider.setPaintTicks(true);
+        return slider;
+    }
+
+    private Component borderHoriz(JComponent left, JComponent middle, JComponent right) {
+        JPanel p = new JPanel(new BorderLayout());
+        if ( left != null ) p.add(left, BorderLayout.WEST);
+        if ( middle != null ) p.add(middle);
+        if ( right != null ) p.add(right, BorderLayout.EAST);
+        return p;
+    }
+
+    private JComponent panel(JComponent right) {
+        JPanel p = new JPanel();
+        p.add(right);
+        return p;
+    }
+
+    abstract public class LoadFileActionListener implements ActionListener {
+        private final FileLabel filename;
+
+        public LoadFileActionListener(FileLabel filename) {
+            this.filename = filename;
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent arg0) {
+            File file = getImageFile(Main.this, filename.getFile());
+            if (file != null) {
+                try {
+                    BufferedImage image = ImageIO.read(file);
+                    filename.setFile(file);
+                    // layerImage = ImageIO.read(new File(file2));
+                    redoMerge();
+                    setImage(image);
+                } catch (IOException e) {
+                    JOptionPane.showMessageDialog(Main.this, "Failed to load file [" + filename1.getFile().getAbsolutePath() + "] with " + e);
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        abstract protected void setImage(BufferedImage image);
+    }
+
+    private void resetBrightnesses() {
+        brightness1.setValue(0);
+        brightness2.setValue(0);
+    }
+
     public class RadioChoice extends JPanel {
         private volatile String value;
+        private JRadioButton firstButton = null;
 
         public RadioChoice(String... labels) {
             setLayout(new FlowLayout());
@@ -682,10 +784,18 @@ public class Main extends JFrame {
             ButtonGroup grp = new ButtonGroup();
             for (String label : labels) {
                 JRadioButton b = makeRadioButton(label, selected);
+                if (firstButton == null) {
+                    firstButton = b;
+                }
                 grp.add(b);
                 add(b);
                 selected = false;
             }
+        }
+
+        public void reset() {
+            firstButton.setSelected(true);
+            redoMerge();
         }
 
         private JRadioButton makeRadioButton(final String label, boolean selected) {
@@ -774,7 +884,7 @@ public class Main extends JFrame {
         }
     }
 
-    public static String version = "0.4";
+    public static String version = "0.5";
 
     public static void main(String[] args) {
         JFrame frame = new Main("Blend " + version);
