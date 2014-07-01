@@ -63,7 +63,7 @@
 
 		<mkdir dir="macPkg" />
 
-		<jarbundler dir="macPkg" name="BlendCam2000" shortname="bc2000" signature="sig" mainclass="com.p944.blend.Main" jar="dist/lib/bc2000.jar" vmoptions="-Xmx400m" jvmversion="1.5+" version="1.0" infostring="Jpg merge utility" build="x">
+		<jarbundler dir="macPkg" name="BlendCam2000" shortname="bc2000" signature="sig" mainclass="com.p944.blend.Main" jar="dist/lib/bc2000.jar" vmoptions="-Xmx1100m" jvmversion="1.5+" version="1.0" infostring="Jpg merge utility" build="x">
 
 			<!-- Adjust the look, feel and behavior -->
 
