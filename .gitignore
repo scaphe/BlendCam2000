@@ -1,0 +1,9 @@
+# Ignore extensions
+.classpath
+.project
+.settings/
+build/com/
+dist/
+
+# Ignore directories
+bin/
