@@ -200,8 +200,10 @@ public class Main extends JFrame {
 
     public String modificationsToString() {
         String str = "";
-        for (Modification modification : modifications) {
-            str += modification.getName() + ", ";
+        for (List<Modification> mods: modifications) {
+            for (Modification modification : mods) {
+                str += modification.getName() + ", ";
+            }
         }
         return str;
     }
@@ -283,11 +285,13 @@ public class Main extends JFrame {
                     System.out.println("Applying modifications of: " + modificationsToString());
                     int total = modifications.size();
                     int count = 1;
-                    for (Modification modification : modifications) {
-                        setStatus("Applying modification " + count + " of " + total + " of " + modification.getName());
-                        copyOfImages[modification.imageIndex] = modification.modify(copyOfImages[modification.imageIndex]);
-                        setStatus("Modification done");
-                        count += 1;
+                    for (List<Modification> mods : modifications) {
+                        for (Modification modification : mods) {
+                            setStatus("Applying modification " + count + " of " + total + " of " + modification.getName() + " on " + modification.imageIndex);
+                            copyOfImages[modification.imageIndex] = modification.modify(copyOfImages[modification.imageIndex]);
+                            setStatus("Modification done");
+                            count += 1;
+                        }
                     }
 
                     if (copyOfImages[0] != null) {
@@ -625,10 +629,12 @@ public class Main extends JFrame {
     private JLabel statusBar;
     private RadioChoice style1;
     private RadioChoice style2;
-    private List<Modification> modifications = new LinkedList<Modification>();
+    private LinkedList<List<Modification>> modifications = new LinkedList<List<Modification>>();
 
     public Main(String title) {
         super(title);
+        modifications.add(new LinkedList<Modification>());
+        modifications.add(new LinkedList<Modification>());
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         imagePanel = new ImagePanel();
         imagePanel.setPreferredSize(new Dimension(300, 300));
@@ -945,7 +951,7 @@ public class Main extends JFrame {
         but.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                modifications.addAll(mod.getModifications());
+                modifications.get(mod.imageIndex).addAll(mod.getModifications());
                 compactModifications();
                 redoMerge();
             }
@@ -955,57 +961,59 @@ public class Main extends JFrame {
 
     public void compactModifications() {
         // Can remove 4x RotateRight
-        boolean removedSomething = false;
-        String before = modificationsToString();
-        int rrCount = 0;
-        int fvCount = 0;
-        int fhCount = 0;
-        int index = 0;
-        while ( index < modifications.size()) {
-            Modification m = modifications.get(index);
-            if ( m instanceof RotateRight ) {
-                rrCount += 1;
-                if ( rrCount == 4 ) {
-                    // Remove the last 4
-                    modifications.remove(index-3);
-                    modifications.remove(index-3);
-                    modifications.remove(index-3);
-                    modifications.remove(index-3);
-                    index -= 4;
-                    removedSomething = true;
+        for (List<Modification> mods: modifications) {
+            boolean removedSomething = false;
+            String before = modificationsToString();
+            int rrCount = 0;
+            int fvCount = 0;
+            int fhCount = 0;
+            int index = 0;
+            while (index < mods.size()) {
+                Modification m = mods.get(index);
+                if (m instanceof RotateRight) {
+                    rrCount += 1;
+                    if (rrCount == 4) {
+                        // Remove the last 4
+                        mods.remove(index - 3);
+                        mods.remove(index - 3);
+                        mods.remove(index - 3);
+                        mods.remove(index - 3);
+                        index -= 4;
+                        removedSomething = true;
+                    }
+                } else {
+                    rrCount = 0;
                 }
-            } else {
-                rrCount = 0;
-            }
-            if ( m instanceof FlipHoriz ) {
-                fhCount += 1;
-                if ( fhCount == 2 ) {
-                    // Remove the last 2
-                    modifications.remove(index-1);
-                    modifications.remove(index-1);
-                    index -= 2;
-                    removedSomething = true;
+                if (m instanceof FlipHoriz) {
+                    fhCount += 1;
+                    if (fhCount == 2) {
+                        // Remove the last 2
+                        mods.remove(index - 1);
+                        mods.remove(index - 1);
+                        index -= 2;
+                        removedSomething = true;
+                    }
+                } else {
+                    fhCount = 0;
                 }
-            } else {
-                fhCount = 0;
-            }
-            if ( m instanceof FlipVert ) {
-                fvCount += 1;
-                if ( fvCount == 2 ) {
-                    // Remove the last 2
-                    modifications.remove(index-1);
-                    modifications.remove(index-1);
-                    index -= 2;
-                    removedSomething = true;
+                if (m instanceof FlipVert) {
+                    fvCount += 1;
+                    if (fvCount == 2) {
+                        // Remove the last 2
+                        mods.remove(index - 1);
+                        mods.remove(index - 1);
+                        index -= 2;
+                        removedSomething = true;
+                    }
+                } else {
+                    fvCount = 0;
                 }
-            } else {
-                fvCount = 0;
+                index += 1;
             }
-            index += 1;
-        }
-        if ( removedSomething ) {
-            System.out.println("Before: "+before);
-            System.out.println("After: "+modificationsToString());
+            if ( removedSomething ) {
+                System.out.println("Before: "+before);
+                System.out.println("After: "+modificationsToString());
+            }
         }
     }
 
@@ -1057,7 +1065,7 @@ public class Main extends JFrame {
         }
     }
 
-    public static String version = "0.6c";
+    public static String version = "0.6d";
 
     public static void main(String[] args) {
         JFrame frame = new Main("Blend " + version);

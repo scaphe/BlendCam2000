@@ -7,3 +7,9 @@ dist/
 
 # Ignore directories
 bin/
+.idea/
+out/
+
+# Ignore specific files
+BlendCam2000.iml
+
