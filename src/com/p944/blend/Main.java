@@ -799,7 +799,8 @@ public class Main extends JFrame {
     public void resetAll() {
         filename1.clear();
         filename2.clear();
-        modifications.clear();
+        modifications.get(0).clear();
+        modifications.get(1).clear();
         resetBrightnesses();
         images[0] = null;
         images[1] = null;
@@ -1065,7 +1066,7 @@ public class Main extends JFrame {
         }
     }
 
-    public static String version = "0.6d";
+    public static String version = "0.6e";
 
     public static void main(String[] args) {
         JFrame frame = new Main("Blend " + version);
