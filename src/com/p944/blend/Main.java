@@ -1244,7 +1244,7 @@ public class Main extends JFrame {
         }
     }
 
-    public static String version = "0.6e";
+    public static String version = "0.7a";
 
     public static void main(String[] args) {
         JFrame frame = new Main("Blend " + version);
