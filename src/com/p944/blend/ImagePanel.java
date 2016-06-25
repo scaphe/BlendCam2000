@@ -30,7 +30,7 @@ import javax.imageio.*;
 
 public class ImagePanel extends JPanel {
     
-    private Image image;
+    private BufferedImage image;
     public int imageDrawnWidth = 0;
     public int imageDrawnHeight = 0;
     private int imageActualWidth = 0;
@@ -46,7 +46,9 @@ public class ImagePanel extends JPanel {
     public void loadImage(String file) throws IOException {
         setImage(ImageIO.read(new File(file)));
     }
-    
+
+    public BufferedImage getImage() { return image; }
+
     public void setImage(BufferedImage read) {
         image = read;
         //might be a situation where image isn't fully loaded, and

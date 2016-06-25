@@ -21,7 +21,6 @@ import java.awt.image.ColorModel;
 import java.awt.image.WritableRaster;
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
@@ -44,11 +43,8 @@ import javax.swing.JRadioButton;
 import javax.swing.JSeparator;
 import javax.swing.JSlider;
 import javax.swing.JTextField;
-import javax.swing.SwingUtilities;
 import javax.swing.event.ChangeEvent;
 import javax.swing.event.ChangeListener;
-
-import com.p944.blend.Main.Modification;
 
 public class Main extends JFrame {
 
@@ -171,6 +167,109 @@ public class Main extends JFrame {
         }
     }
 
+//    public static class ClipAbove extends Modification {
+//        public ClipAbove(int i) {
+//            super(i);
+//        }
+//
+//        public BufferedImage modify(BufferedImage image) {
+//            BufferedImage imageCopy = deepCopy(image);
+//            int w = image.getWidth();
+//            int h = image.getHeight();
+////            clip(imageCopy, w/3, 0,   0, (int)(h*0.75), true);  // Right - A is on right of B
+//            clip(imageCopy, 0, (int)(h*0.25),   w, (int)(h*0.75), true);  // Right - A is on right of B
+////            clip(imageCopy, 0, (int)(h*0.75),     w/3, (int)(h*0.25),   true);  // Left - A is on left of B
+////            clip(imageCopy, 0, (int)(h*0.75),     w, (int)(h*0.25),   true);  // Left/Above - A is on left of B
+////            clip(imageCopy, w/3, 0,   0, h, false);  // Left
+////            clip(imageCopy, 0, h/2,    w, h, true);  // Above
+////            clip(imageCopy, 0, (int)(h*0.5),    w, (int)(h*0.75), false);  // Below
+////            clip(imageCopy, w/2, 0,    w, h, false);  // Below
+//            return imageCopy;
+//        }
+//    }
+
+    public static class ClipLeft extends Modification {
+        int Ax= 0;
+        int Ay= 0;
+        int Bx= 0;
+        int By= 0;
+        int origWidth;
+        int origHeight;
+
+        public ClipLeft(int i, int _Ax, int _Ay, int _Bx, int _By, int _origWidth, int _origHeight) {
+            super(i);
+            Ax = _Ax;
+            Ay = _Ay;
+            Bx = _Bx;
+            By = _By;
+            origWidth = _origWidth;
+            origHeight = _origHeight;
+        }
+
+        public BufferedImage modify(BufferedImage image) {
+            BufferedImage imageCopy = deepCopy(image);
+            if (isWantSwapAB()) {
+                swapAB();
+            }
+
+            int drawWidth = imageCopy.getWidth();
+            int drawHeight = imageCopy.getHeight();
+            int ax = (int)((double)drawWidth / origWidth * Ax);
+            int bx = (int)((double)drawWidth / origWidth * Bx);
+            int ay = (int)((double)drawHeight / origHeight * Ay);
+            int by = (int)((double)drawHeight / origHeight * By);
+            clip(imageCopy, ax, ay,   bx, by);
+            return imageCopy;
+        }
+
+        public boolean isWantSwapAB() {
+            return false; // Ax < Bx;
+        }
+
+        public void swapAB() {
+            int tmp = Ax;
+            Ax = Bx;
+            Bx = tmp;
+
+            tmp = Ay;
+            Ay = By;
+            By = tmp;
+        }
+    }
+
+    public static class ClipRight extends ClipLeft {
+        public ClipRight(int i, int _Ax, int _Ay, int _Bx, int _By, int _origWidth, int _origHeight) {
+            super(i, _Ax, _Ay, _Bx, _By, _origWidth, _origHeight);
+        }
+
+        public boolean isWantSwapAB() {
+            return false; // Ax > Bx;
+        }
+    }
+
+    public static void clip(BufferedImage image, int Ax, int Ay, int Bx, int By) {
+        int w = image.getWidth();
+        int h = image.getHeight();
+
+        WritableRaster raster = image.getRaster();
+
+        // We need 3 integers (for R,G,B color values) per pixel.
+//        int[] pixels = new int[w * h * 3];
+//        raster.getPixels(0, 0, w, h, pixels);
+
+        int [] black = new int[3];
+        // Each pixel has 3 RGB colors in array
+        for (int Cx = 0; Cx < w; Cx += 1) {
+            for (int Cy = 0; Cy < h; Cy += 1) {
+                int t = (Bx - Ax) * (Cy - Ay) - (By - Ay) * (Cx - Ax);
+                if (t < 0) {
+                    raster.setPixel(Cx, Cy, black);
+                }
+            }
+        }
+    }
+
+
     private static AtomicLong recalcImageTS = new AtomicLong(0);
     private static Timer timer;
     BufferedImage[] images = new BufferedImage[] { null, null };
@@ -210,6 +309,25 @@ public class Main extends JFrame {
     
     class BIHolder {
         public BufferedImage ans = null;
+    }
+
+    public BufferedImage applyOnlyClipModifications(BufferedImage i, int ii, ResizeMod ra) {
+        // Zoom and Pan
+        setStatus("Resizing");
+        if (ra != null) {
+            i = ra.modify(i);
+        }
+        setStatus("Resizing done");
+
+        // Just apply clip modifications so you can see what extra bits you are clipping
+        for (List<Modification> mods : modifications) {
+            for (Modification modification : mods) {
+                if (modification.imageIndex == ii && modification instanceof ClipLeft) {
+                    i = modification.modify(i);
+                }
+            }
+        }
+        return i;
     }
 
     public BufferedImage mergeImages(final int windowWidth, final int windowHeight) throws IOException {
@@ -617,7 +735,7 @@ public class Main extends JFrame {
     private String username = System.getProperty("user.name");
     private FileLabel filename1 = new FileLabel("/Users/" + username + "/public/face1.jpg");
     private FileLabel filename2 = new FileLabel("/Users/" + username + "/public/layer1.jpg");
-    private File prevSaveFile = new File("/Users/" + username + "/Pictures/Lightroom/project/project2013/mergedImage.jpg");
+    private File prevSaveFile = new File("/Users/" + username + "/public/mergedImage.jpg");
 
     private ImagePanel imagePanel;
 
@@ -757,30 +875,90 @@ public class Main extends JFrame {
         resize1.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                ImageResizerFrame f = new ImageResizerFrame(images[0], resizeAction1);
+                BufferedImage i = applyOnlyClipModifications(images[0], 0, null);
+                ImageResizerFrame f = new ImageResizerFrame(i, resizeAction1);
                 resizeAction1 = f.result;
                 redoMerge();
             }
         });
+
         JButton resize2 = new JButton("Resize");
         resize2.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent arg0) {
-                ImageResizerFrame f = new ImageResizerFrame(images[1], resizeAction2);
+                BufferedImage i = applyOnlyClipModifications(images[1], 1, null);
+                ImageResizerFrame f = new ImageResizerFrame(i, resizeAction2);
                 resizeAction2 = f.result;
                 redoMerge();
             }
         });
 
+
+        JButton clipLeft1 = new JButton("ClipLeft");
+        clipLeft1.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                BufferedImage i = applyOnlyClipModifications(images[0], 0, resizeAction1);
+                ImageClipFrame f = new ImageClipFrame(i, 0, false);
+                final Modification mod = f.result;
+                if (mod != null) {
+                    modifications.get(0).add(mod);
+                    redoMerge();
+                }
+            }
+        });
+
+        JButton clipRight1 = new JButton("ClipRight");
+        clipRight1.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                BufferedImage i = applyOnlyClipModifications(images[0], 0, resizeAction1);
+                ImageClipFrame f = new ImageClipFrame(i, 0, true);
+                final Modification mod = f.result;
+                if (mod != null) {
+                    modifications.get(0).add(mod);
+                    redoMerge();
+                }
+            }
+        });
+
+        JButton clipLeft2 = new JButton("ClipLeft");
+        clipLeft2.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                BufferedImage i = applyOnlyClipModifications(images[1], 1, resizeAction2);
+                ImageClipFrame f = new ImageClipFrame(i, 1, false);
+                final Modification mod = f.result;
+                if (mod != null) {
+                    modifications.get(1).add(mod);
+                    redoMerge();
+                }
+            }
+        });
+
+        JButton clipRight2 = new JButton("ClipRight");
+        clipRight2.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent arg0) {
+                BufferedImage i = applyOnlyClipModifications(images[1], 1, resizeAction2);
+                ImageClipFrame f = new ImageClipFrame(i, 1, true);
+                final Modification mod = f.result;
+                if (mod != null) {
+                    modifications.get(1).add(mod);
+                    redoMerge();
+                }
+            }
+        });
+
         controls.add(flow(new JLabel("Image 1:"), filename1, load1));
-        controls.add(resize1);
+        controls.add(flow(clipLeft1, clipRight1, resize1));
         controls.add(style1);
         controls.add(flow(makeButton(new FlipVert(0)), makeButton(new FlipHoriz(0)), makeButton(new RotateLeft(0)), makeButton(new RotateRight(0))));
         controls.add(borderHoriz(null, brightness1, panel(reset1)));
 
         controls.add(new JSeparator());
         controls.add(borderHoriz(new JLabel("Image 2:"), filename2, load2));
-        controls.add(resize2);
+        controls.add(flow(clipLeft2, clipRight2, resize2));
         controls.add(style2);
         controls.add(flow(makeButton(new FlipVert(1)), makeButton(new FlipHoriz(1)), makeButton(new RotateLeft(1)), makeButton(new RotateRight(1))));
         controls.add(borderHoriz(null, brightness2, panel(reset2)));

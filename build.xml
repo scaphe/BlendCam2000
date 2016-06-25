@@ -54,24 +54,30 @@
 		</jar>
 	</target>
 
+	<!-- Import environment variables -->
+	<property environment="env"/>
 
-	<taskdef name="jarbundler" classname="net.sourceforge.jarbundler.JarBundler">
-		<classpath path="${jars}/jarbundler-2.2.0.jar" />
+	<!-- Define the appbundler task -->
+	<taskdef name="bundleapp" classname="com.oracle.appbundler.AppBundlerTask">
+		<classpath path="${jars}/appbundler-1.0.jar" />
 	</taskdef>
 
-	<target name="macOS" depends="compile" description="Make MacOS package">
+	<!-- Create the app bundle, see https://java.net/downloads/appbundler/appbundler.html -->
+	<target name="macOS" depends="compile">
+		<bundleapp outputdirectory="macPkg"
+				   name="BlendCam2000"
+				   displayname="BlendCam2000"
+				   identifier="BlendCam2000"
+				   shortversion="1.0"
+				   applicationCategory="public.app-category.developer-tools"
+				   mainclassname="com.p944.blend.Main">
+			<runtime dir="/Library/Java/JavaVirtualMachines/jdk1.8.0_92.jdk/Contents/Home/"/>
+			<classpath file="dist/lib/bc2000.jar"/>
+			<option value="-d64"/>
+			<option value="-Dapple.laf.useScreenMenuBar=true"/>
 
-		<mkdir dir="macPkg" />
-
-		<jarbundler dir="macPkg" name="BlendCam2000" shortname="bc2000" signature="sig" mainclass="com.p944.blend.Main" jar="dist/lib/bc2000.jar" vmoptions="-Xmx1100m" jvmversion="1.5+" version="1.0" infostring="Jpg merge utility" build="x">
-
-			<!-- Adjust the look, feel and behavior -->
-
-			<javaproperty name="apple.laf.useScreenMenuBar" value="true" />
-			<javaproperty name="apple.awt.brushMetal" value="true" />
-
-		</jarbundler>
-
+			<option value="-Dapple.awt.brushMetal=true" />
+		</bundleapp>
 	</target>
 
 	<target name="clean" description="clean up">
